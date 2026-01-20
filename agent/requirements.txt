@@ -1,0 +1,4 @@
+# Agent dependencies
+google-adk
+requests
+streamlit

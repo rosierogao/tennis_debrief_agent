@@ -1,0 +1,6 @@
+# MCP Memory Server Dependencies
+fastapi
+uvicorn[standard]
+pydantic
+google-cloud-firestore
+python-dotenv
