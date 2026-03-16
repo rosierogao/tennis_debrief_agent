@@ -1,0 +1,37 @@
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+
+# Tests
+tests/
+pytest.ini
+requirements-dev.txt
+.pytest_cache/
+
+# Dev/local artifacts
+outputs/
+.env
+.env.*
+!.env.example
+
+# MCP server (deployed separately)
+mcp_memory_server/
+
+# Scripts
+scripts/
+
+# Docs
+README.md
+
+# Git
+.git/
+.gitignore

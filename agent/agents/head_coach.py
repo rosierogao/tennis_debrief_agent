@@ -36,9 +36,10 @@ class HeadCoachAgent:
         tactical: Dict[str, Any],
         mental: Dict[str, Any],
         patterns: Dict[str, Any],
+        recent_matches: Optional[list] = None,
         llm_call: Optional[Callable[[str], str]] = None,
     ) -> Dict[str, Any]:
-        prompt = self._build_prompt(match_record, technical, tactical, mental, patterns)
+        prompt = self._build_prompt(match_record, technical, tactical, mental, patterns, recent_matches)
         validator = self._validate_output
 
         if llm_call is None:
@@ -63,6 +64,7 @@ class HeadCoachAgent:
         tactical: Dict[str, Any],
         mental: Dict[str, Any],
         patterns: Dict[str, Any],
+        recent_matches: Optional[list] = None,
     ) -> str:
         template = self.prompt_path.read_text()
         payload = {
@@ -72,6 +74,8 @@ class HeadCoachAgent:
             "mental": mental,
             "patterns": patterns,
         }
+        if recent_matches is not None:
+            payload["recent_matches"] = recent_matches
         return f"{template}\n\nINPUT:\n{json.dumps(payload, ensure_ascii=True)}"
 
     def _default_output(self) -> Dict[str, Any]:
@@ -79,14 +83,25 @@ class HeadCoachAgent:
             "summary": "",
             "focus_areas": [],
             "levers": [],
+            "drills": [],
+            "history_comparison": {"summary": "", "patterns": []},
             "confidence": 0.4,
         }
 
     def _validate_output(self, obj: Dict[str, Any]) -> None:
-        require_keys(obj, ["summary", "focus_areas", "levers", "confidence"])
+        require_keys(obj, ["summary", "focus_areas", "levers", "drills", "history_comparison", "confidence"])
         require_list_of_str(obj.get("focus_areas"), "focus_areas", max_items=4)
         levers = require_list_of_dict(obj.get("levers"), "levers", max_items=3)
         for item in levers:
             require_keys(item, ["lever", "why", "confidence"])
             require_float_0_1(item.get("confidence"), "levers[].confidence")
+        drills = require_list_of_dict(obj.get("drills"), "drills", max_items=3)
+        for item in drills:
+            require_keys(item, ["drill", "why", "confidence"])
+            require_float_0_1(item.get("confidence"), "drills[].confidence")
+        history = obj.get("history_comparison")
+        if not isinstance(history, dict):
+            raise ValueError("history_comparison must be an object")
+        require_keys(history, ["summary", "patterns"])
+        require_list_of_str(history.get("patterns"), "history_comparison.patterns", max_items=4)
         require_float_0_1(obj.get("confidence"), "confidence")

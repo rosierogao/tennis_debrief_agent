@@ -3,7 +3,7 @@ Firestore database layer for tennis match debrief storage and retrieval.
 Uses Application Default Credentials (ADC) for authentication.
 """
 from typing import Dict, Any, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from google.cloud import firestore
 
 
@@ -39,7 +39,7 @@ class FirestoreDB:
         Returns:
             Document ID of the created/updated match document
         """
-        created_at = datetime.utcnow().isoformat()
+        created_at = datetime.now(timezone.utc).isoformat()
         
         match_data = {
             "created_at": created_at,

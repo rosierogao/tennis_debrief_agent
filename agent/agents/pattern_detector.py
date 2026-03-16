@@ -31,9 +31,10 @@ class PatternDetectorAgent:
     def run(
         self,
         match_record: Dict[str, Any],
+        recent_matches: Optional[list] = None,
         llm_call: Optional[Callable[[str], str]] = None,
     ) -> Dict[str, Any]:
-        prompt = self._build_prompt(match_record)
+        prompt = self._build_prompt(match_record, recent_matches)
         validator = self._validate_output
 
         if llm_call is None:
@@ -51,9 +52,12 @@ class PatternDetectorAgent:
             instructions=self.prompt_path.read_text(),
         )
 
-    def _build_prompt(self, match_record: Dict[str, Any]) -> str:
+    def _build_prompt(self, match_record: Dict[str, Any], recent_matches: Optional[list] = None) -> str:
         template = self.prompt_path.read_text()
-        return f"{template}\n\nMATCH_RECORD:\n{json.dumps(match_record, ensure_ascii=True)}"
+        payload: Dict[str, Any] = {"match_record": match_record}
+        if recent_matches is not None:
+            payload["recent_matches"] = recent_matches
+        return f"{template}\n\nINPUT:\n{json.dumps(payload, ensure_ascii=True)}"
 
     def _default_output(self) -> Dict[str, Any]:
         return {

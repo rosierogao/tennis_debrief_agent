@@ -86,22 +86,8 @@ def _render_debrief(report: Dict[str, Any]) -> None:
     history = report.get("history_comparison") or {}
     confidence = report.get("confidence")
 
-    summary_col, confidence_col = st.columns([2, 1])
-    with summary_col:
-        st.markdown("#### Summary")
-        st.write(summary or "No summary provided.")
-
-    with confidence_col:
-        st.markdown("#### Confidence")
-        if confidence is not None:
-            try:
-                score = float(confidence)
-                st.metric("Score", f"{score:.2f}")
-                st.progress(score)
-            except (TypeError, ValueError):
-                st.write(confidence)
-        else:
-            st.write("Not provided.")
+    st.markdown("#### Summary")
+    st.write(summary or "No summary provided.")
 
     st.markdown("#### Focus Areas")
     if focus_areas:
@@ -115,16 +101,9 @@ def _render_debrief(report: Dict[str, Any]) -> None:
         for idx, lever in enumerate(levers, start=1):
             title = lever.get("lever") if isinstance(lever, dict) else str(lever)
             reason = lever.get("why") if isinstance(lever, dict) else None
-            conf = lever.get("confidence") if isinstance(lever, dict) else None
             st.markdown(f"**{idx}. {title}**")
             if reason:
-                st.write(reason)
-            if conf is not None:
-                try:
-                    st.caption(f"Confidence: {float(conf):.2f}")
-                except (TypeError, ValueError):
-                    st.caption(f"Confidence: {conf}")
-            st.divider()
+                st.caption(reason)
     else:
         st.write("No levers provided.")
 
@@ -133,16 +112,9 @@ def _render_debrief(report: Dict[str, Any]) -> None:
         for idx, drill in enumerate(drills, start=1):
             title = drill.get("drill") if isinstance(drill, dict) else str(drill)
             reason = drill.get("why") if isinstance(drill, dict) else None
-            conf = drill.get("confidence") if isinstance(drill, dict) else None
             st.markdown(f"**{idx}. {title}**")
             if reason:
-                st.write(reason)
-            if conf is not None:
-                try:
-                    st.caption(f"Confidence: {float(conf):.2f}")
-                except (TypeError, ValueError):
-                    st.caption(f"Confidence: {conf}")
-            st.divider()
+                st.caption(reason)
     else:
         st.write("No drills provided.")
 

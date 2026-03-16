@@ -10,7 +10,7 @@ from __future__ import annotations
 from typing import Any, Dict, AsyncGenerator, Callable, Iterable
 from pathlib import Path
 import json
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 
 from agent.utils.mcp_client import post_tool, MCPClientError
 from agent.utils.json_guard import (
@@ -267,6 +267,7 @@ if Agent is not None:
         cutoff = _parse_match_date(match_record)
         if cutoff is None:
             return matches
+        six_months_ago = cutoff - timedelta(days=183)
         filtered: list[dict[str, Any]] = []
         for item in matches:
             item_date: date | None = None
@@ -286,7 +287,7 @@ if Agent is not None:
                     item_date = datetime.fromisoformat(created_at).date()
                 except ValueError:
                     continue
-            if item_date < cutoff:
+            if six_months_ago <= item_date < cutoff:
                 filtered.append(item)
         return filtered
 
@@ -372,8 +373,8 @@ if Agent is not None:
             for sub_agent in self.sub_agents:
                 if sub_agent.name == "intake_agent" and ctx.session.state.get("match_record"):
                     continue
-                if sub_agent.name == "head_coach_agent":
-                    recent = _tool_match_retrieve_recent(limit=5, include_full=True)
+                if sub_agent.name == "pattern_detector_agent":
+                    recent = _tool_match_retrieve_recent(limit=8, include_full=True)
                     matches = recent.get("matches") if isinstance(recent, dict) else None
                     if isinstance(matches, list):
                         match_record = ctx.session.state.get("match_record")
@@ -483,7 +484,7 @@ if Agent is not None:
         model="gemini-2.0-flash",
         instruction=_instruction_with_state(
             "pattern_detector.md",
-            ["match_record", "technical_hypotheses", "tactical_observations", "mental_observations"],
+            ["match_record", "technical_hypotheses", "tactical_observations", "mental_observations", "recent_matches"],
         ),
         output_key="patterns",
         tools=[validate_patterns],
