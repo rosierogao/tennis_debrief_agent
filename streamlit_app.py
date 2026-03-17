@@ -288,8 +288,8 @@ def _render_debrief(report: Dict[str, Any]) -> None:
 
 # ── Page setup ────────────────────────────────────────────────────────────────
 
-st.set_page_config(page_title="Tennis Debrief", page_icon="🎾", layout="wide")
-st.title("🎾 Tennis Debrief Agent")
+st.set_page_config(page_title="Court Debrief", page_icon="🎾", layout="wide")
+st.title("🎾 Court Debrief")
 
 with st.sidebar:
     st.header("Instructions")

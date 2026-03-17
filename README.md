@@ -1,6 +1,6 @@
-# Tennis Debrief Agent
+# Court Debrief
 
-A multi-agent AI system that helps tennis players analyze match performance, identify recurring patterns, and get concrete improvement recommendations — backed by persistent match history.
+A multi-agent AI system that helps tennis players track match records, identify recurring patterns, and get concrete coaching feedback — backed by persistent match history.
 
 [![Docker MCP](https://img.shields.io/docker/v/rosierogao/tennis-debrief-mcp?label=mcp%20server&logo=docker)](https://hub.docker.com/r/rosierogao/tennis-debrief-mcp)
 [![Docker Agent](https://img.shields.io/docker/v/rosierogao/tennis-debrief-agent?label=agent%20ui&logo=docker)](https://hub.docker.com/r/rosierogao/tennis-debrief-agent)
