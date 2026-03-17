@@ -102,6 +102,20 @@ def match_retrieve_recent(payload: Dict[str, Any]) -> Dict[str, Any]:
         return _internal_error(str(exc))
 
 
+@app.post("/tools/match.delete")
+def match_delete(payload: Dict[str, Any]) -> Dict[str, Any]:
+    try:
+        parsed = models.MatchDeleteInput.model_validate(payload)
+        deleted = db.delete_match(parsed.match_id)
+        if not deleted:
+            return _not_found(f"Match {parsed.match_id} not found")
+        return models.MatchDeleteOutput(ok=True).model_dump()
+    except ValidationError as exc:
+        return _validation_error(str(exc))
+    except Exception as exc:  # pragma: no cover - safety net
+        return _internal_error(str(exc))
+
+
 def main() -> None:
     """Run the FastAPI server locally."""
     import uvicorn

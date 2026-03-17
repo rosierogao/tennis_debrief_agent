@@ -126,6 +126,19 @@ class FirestoreDB:
         data["match_id"] = doc.id
         return data
     
+    def delete_match(self, match_id: str) -> bool:
+        """
+        Delete a match document by ID.
+
+        Returns:
+            True if the document existed and was deleted, False if not found.
+        """
+        doc_ref = self.matches_ref.document(match_id)
+        if not doc_ref.get().exists:
+            return False
+        doc_ref.delete()
+        return True
+
     def update_profile(self, profile_data: Dict[str, Any]) -> None:
         """
         Update the profile singleton document.

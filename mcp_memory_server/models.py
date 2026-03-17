@@ -76,3 +76,13 @@ class MatchItem(BaseModel):
 class MatchRetrieveRecentOutput(BaseModel):
     """Output for match.retrieve_recent tool."""
     matches: List[MatchItem] = Field(..., description="List of recent matches")
+
+
+class MatchDeleteInput(BaseModel):
+    """Input for match.delete tool."""
+    match_id: str = Field(..., description="Match document ID to delete")
+
+
+class MatchDeleteOutput(BaseModel):
+    """Output for match.delete tool."""
+    ok: bool = Field(..., description="True if deleted, False if not found")
