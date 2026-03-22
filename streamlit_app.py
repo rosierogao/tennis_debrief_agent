@@ -304,6 +304,124 @@ def _render_radar(technique_scores: Dict[str, Any]) -> None:
         st.caption("grey axes = not mentioned this match")
 
 
+def _render_trend_charts(matches: List[Dict[str, Any]]) -> None:
+    """Render 10 technique trend charts from match history."""
+    series: Dict[str, List] = {k: [] for k in _TECHNIQUE_ORDER}
+    dates: List[str] = []
+
+    for m in matches:
+        record = m.get("match_record") or {}
+        report = m.get("debrief_report") or {}
+        date = record.get("match_date") or m.get("created_at", "")[:10]
+        dates.append(date)
+        scores = report.get("technique_scores") or {}
+        for key in _TECHNIQUE_ORDER:
+            series[key].append(scores.get(key))  # None if not mentioned
+
+    if not dates:
+        st.info("No match history yet. Complete your first debrief to start tracking progress.")
+        return
+
+    cols = st.columns(2)
+    for idx, key in enumerate(_TECHNIQUE_ORDER):
+        label = _TECHNIQUE_LABELS[key]
+        vals = series[key]
+        col = cols[idx % 2]
+
+        with col:
+            st.markdown(f"**{label}**")
+
+            scored_dates = [d for d, v in zip(dates, vals) if v is not None]
+            scored_vals = [v for v in vals if v is not None]
+
+            if not scored_dates:
+                st.caption("No data yet")
+                continue
+
+            # Compute interpolated y for null positions (midpoint of adjacent scores)
+            interp_null_dates: List[str] = []
+            interp_null_vals: List[float] = []
+            for i, (d, v) in enumerate(zip(dates, vals)):
+                if v is not None:
+                    continue
+                before = next((vals[j] for j in range(i - 1, -1, -1) if vals[j] is not None), None)
+                after = next((vals[j] for j in range(i + 1, len(vals)) if vals[j] is not None), None)
+                if before is not None or after is not None:
+                    interp_y = ((before or after) + (after or before)) / 2
+                    interp_null_dates.append(d)
+                    interp_null_vals.append(interp_y)
+
+            fig = go.Figure()
+
+            # Dashed gap-connector trace (connects across nulls, low opacity)
+            fig.add_trace(go.Scatter(
+                x=dates,
+                y=vals,
+                mode="lines",
+                line=dict(color=_TECHNIQUE_COLOR, width=1, dash="dot"),
+                opacity=0.3,
+                connectgaps=True,
+                showlegend=False,
+                hoverinfo="skip",
+            ))
+
+            # Hollow circle markers at null positions (interpolated y)
+            if interp_null_dates:
+                fig.add_trace(go.Scatter(
+                    x=interp_null_dates,
+                    y=interp_null_vals,
+                    mode="markers",
+                    marker=dict(
+                        symbol="circle-open",
+                        size=7,
+                        color=_TECHNIQUE_COLOR,
+                        opacity=0.4,
+                        line=dict(width=1.5),
+                    ),
+                    showlegend=False,
+                    hoverinfo="skip",
+                ))
+
+            # Solid scored-points trace
+            fig.add_trace(go.Scatter(
+                x=scored_dates,
+                y=scored_vals,
+                mode="lines+markers",
+                line=dict(color=_TECHNIQUE_COLOR, width=2),
+                marker=dict(size=7, color=_TECHNIQUE_COLOR),
+                connectgaps=False,
+                showlegend=False,
+                hovertemplate="%{x}: %{y}/5<extra></extra>",
+            ))
+
+            # Trend direction: slope across last 3 scored points (fallback: last 2)
+            if len(scored_vals) >= 3:
+                delta = scored_vals[-1] - scored_vals[-3]
+            elif len(scored_vals) >= 2:
+                delta = scored_vals[-1] - scored_vals[-2]
+            else:
+                delta = 0
+            trend = "↑" if delta > 0 else ("↓" if delta < 0 else "→")
+            trend_color = "#4CAF50" if delta > 0 else ("#f44336" if delta < 0 else "#aaaaaa")
+
+            fig.update_layout(
+                yaxis=dict(range=[0, 5], tickvals=[1, 2, 3, 4, 5], tickfont=dict(size=9)),
+                xaxis=dict(tickfont=dict(size=9)),
+                margin=dict(l=30, r=10, t=10, b=30),
+                height=160,
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                font=dict(color="#cccccc"),
+            )
+
+            st.plotly_chart(fig, use_container_width=True)
+            st.markdown(
+                f"<div style='text-align:right;font-size:0.75rem;color:{trend_color}'>"
+                f"{trend} last match: {scored_vals[-1]}/5</div>",
+                unsafe_allow_html=True,
+            )
+
+
 def _render_debrief(report: Dict[str, Any]) -> None:
     if not report:
         st.warning("No debrief report found.")
@@ -409,7 +527,7 @@ profile = st.session_state["profile"]
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 
-tab_debrief, tab_history = st.tabs(["New Debrief", "Match History"])
+tab_debrief, tab_history, tab_progress = st.tabs(["New Debrief", "Match History", "Progress"])
 
 # ── Tab 1: New Debrief ────────────────────────────────────────────────────────
 
@@ -623,3 +741,26 @@ with tab_history:
                         if st.button("🗑 Delete this match", key=f"del_{match_id}"):
                             st.session_state[confirm_key] = True
                             st.rerun()
+
+# ── Tab 3: Progress ───────────────────────────────────────────────────────────
+
+with tab_progress:
+    st.subheader("Technique Progress")
+    st.caption("Scores are AI-inferred from your match notes. Only techniques you mention are scored.")
+
+    if st.button("Load progress", key="load_progress"):
+        st.session_state["progress_loaded"] = True
+
+    if st.session_state.get("progress_loaded"):
+        result = _mcp_post("/tools/match.retrieve_recent", {"limit": 20, "include_full": True})
+        matches = (result or {}).get("matches") or []
+
+        if not matches:
+            st.info("No match history yet. Complete your first debrief to start tracking progress.")
+        else:
+            # Sort ascending by date for chronological trend lines
+            matches = sorted(
+                matches,
+                key=lambda m: (m.get("match_record") or {}).get("match_date") or m.get("created_at", ""),
+            )
+            _render_trend_charts(matches)
