@@ -80,33 +80,47 @@ Add `technique_scores` to the output schema definition. Add a scoring rules bloc
 
 ### 2. `agent/agents/head_coach.py`
 
-- Add `technique_scores` to `_default_output()` — all keys present, all values `null`
-- Add `technique_scores` to `_validate_output()` — accept dict with int 1–5 or null per key
+- Add `technique_scores` to `_default_output()` — all 10 keys present, all values `null`
+- Note: `_validate_output()` in the class wrapper is not called by the live pipeline (the live agent is defined directly in `agent/agent.py` as an ADK `Agent`). This file only needs `_default_output()` updated for consistency; the runtime validation is in `json_guard.py`.
 
-### 3. `agent/utils/validators.py`
+### 3. `agent/utils/json_guard.py` — `validate_head_coach`
 
-Update `validate_head_coach` to accept the new `technique_scores` field. Each value must be an integer 1–5 or null. Extra keys are ignored.
+This is the actual runtime validator (passed as a tool to the ADK agent in `agent/agent.py`). Update it to accept the new `technique_scores` field:
 
-### 4. `streamlit_app.py` — Radar in debrief output
+- `technique_scores` is optional (may be absent for backwards compatibility)
+- If present, must be a dict with exactly the 10 technique keys
+- Each value must be an integer 1–5 or `null`
+- Return a validation error if any value is outside 1–5 (excluding null)
 
-- After `_render_debrief()` renders the text sections, render a radar chart using Plotly
+### 4. `streamlit_app.py` — Exclude `technique_scores` from "Additional Notes"
+
+`_render_debrief()` has a catch-all `other_keys` block (around line 276) that renders unrecognised keys as raw JSON under "Additional Notes". Add `"technique_scores"` to the exclusion set in that block at the same time as adding the radar chart — otherwise `technique_scores` will appear as raw JSON immediately after deployment.
+
+### 5. `streamlit_app.py` — Radar in debrief output
+
+- After the existing text sections in `_render_debrief()`, render a radar chart using `plotly.graph_objects.Scatterpolar`
 - Only plot techniques with non-null scores as filled polygon vertices
-- Techniques with null scores show their axis line in grey/dashed but contribute no polygon vertex
-- Uses `plotly.graph_objects.Scatterpolar`
-- Displayed in the right column alongside the existing debrief text
+- Techniques with null scores show their axis line but contribute no polygon vertex — show them as dashed grey axes with a caption "grey axes = not mentioned this match"
+- **All-null edge case:** if every technique score is null (terse match note), skip the radar entirely and show `st.caption("No technique data — mention specific techniques in your notes to see scoring.")` instead
+- Range: 0–5 on all axes
 
-### 5. `streamlit_app.py` — Progress tab
+### 6. `streamlit_app.py` — Progress tab
 
-- Add a third tab: `tab_debrief, tab_history, tab_progress = st.tabs([...])`
-- On load: fetch last 20 matches via `match.retrieve_recent` with `include_full=True`
-- For each of the 10 techniques, build a time series: `[(match_date, score_or_null), ...]`
-- Render 10 small Plotly line charts in a 2×5 grid using `st.columns`
-- `connectgaps=False` in Plotly so lines break at nulls — then add a second dashed trace connecting across gaps to visualise the interpolated trend
-- Null positions shown as hollow open-circle markers on the dashed connector trace
+- Add a third tab: `tab_debrief, tab_history, tab_progress = st.tabs(["New Debrief", "Match History", "Progress"])`
+- On load button click: fetch matches via `_mcp_post("/tools/match.retrieve_recent", {"limit": 20, "include_full": True})`
+- **Empty history edge case:** if no matches are returned, show `st.info("No match history yet. Complete your first debrief to start tracking progress.")` — do not render charts
+- For each of the 10 techniques, extract the time series: `[(match_date, score_or_null), ...]` sorted by date ascending
+- Render 10 small Plotly line charts in a 2-column grid using `st.columns(2)` with `st.plotly_chart(..., use_container_width=True)`
+- Each chart uses two traces:
+  1. Solid line + filled circles — only non-null points (`connectgaps=False`)
+  2. Dashed line — connects across nulls (`connectgaps=True`, no markers, low opacity 0.3)
+- Null-position hollow circle marker on the dashed trace to signal missing data
+- X-axis: match dates; Y-axis: fixed range 0–5
+- Trend direction indicator (↑ improving / ↓ declining / → stable) based on slope of last 3 scored points
 
-### 6. `agent/requirements.txt`
+### 7. `agent/requirements.txt`
 
-Add `plotly>=5.0` if not already present.
+Add `plotly>=5.0` as a hard dependency. No graceful fallback — if plotly is missing the app will fail to start, which is the correct behaviour for a missing required dependency (same as all other imports in the file).
 
 ---
 
