@@ -103,6 +103,13 @@ def validate_patterns(payload: Dict[str, Any]) -> Dict[str, Any]:
         return _err(str(exc))
 
 
+_TECHNIQUE_KEYS = {
+    "first_serve_pct", "double_faults", "forehand", "backhand",
+    "rally_depth", "unforced_errors", "return_of_serve",
+    "footwork", "pressure_performance", "momentum",
+}
+
+
 def validate_head_coach(payload: Dict[str, Any]) -> Dict[str, Any]:
     try:
         require_keys(
@@ -124,6 +131,22 @@ def validate_head_coach(payload: Dict[str, Any]) -> Dict[str, Any]:
         require_keys(history, ["summary", "patterns"])
         require_list_of_str(history.get("patterns"), "history_comparison.patterns", max_items=4)
         require_float_0_1(payload.get("confidence"), "confidence")
+
+        # Validate technique_scores if present (optional field)
+        scores = payload.get("technique_scores")
+        if scores is not None:
+            if not isinstance(scores, dict):
+                raise ValueError("technique_scores must be an object")
+            for key, val in scores.items():
+                if key not in _TECHNIQUE_KEYS:
+                    continue  # extra keys tolerated
+                if val is None:
+                    continue
+                if not isinstance(val, int) or val < 1 or val > 5:
+                    raise ValueError(
+                        f"technique_scores.{key} must be an integer 1-5 or null, got {val!r}"
+                    )
+
         return _ok()
     except Exception as exc:
         return _err(str(exc))

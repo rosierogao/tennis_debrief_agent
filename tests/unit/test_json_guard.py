@@ -138,3 +138,58 @@ class TestValidateHeadCoach:
         payload = {**HEAD_COACH_OUTPUT, "focus_areas": ["a", "b", "c", "d", "e"]}
         result = validate_head_coach(payload)
         assert "error" in result
+
+
+class TestValidateHeadCoachTechniqueScores:
+    """Tests for technique_scores field in validate_head_coach."""
+
+    def _base(self):
+        """Return a valid HEAD_COACH_OUTPUT with technique_scores."""
+        import copy
+        return copy.deepcopy(HEAD_COACH_OUTPUT)
+
+    def test_valid_with_technique_scores(self):
+        result = validate_head_coach(self._base())
+        assert result == {"ok": True}
+
+    def test_valid_without_technique_scores(self):
+        """technique_scores is optional for backwards compatibility."""
+        payload = self._base()
+        del payload["technique_scores"]
+        assert validate_head_coach(payload) == {"ok": True}
+
+    def test_all_null_technique_scores_is_valid(self):
+        payload = self._base()
+        payload["technique_scores"] = {k: None for k in payload["technique_scores"]}
+        assert validate_head_coach(payload) == {"ok": True}
+
+    def test_score_out_of_range_returns_error(self):
+        payload = self._base()
+        payload["technique_scores"]["forehand"] = 6
+        result = validate_head_coach(payload)
+        assert "error" in result
+
+    def test_score_zero_returns_error(self):
+        payload = self._base()
+        payload["technique_scores"]["backhand"] = 0
+        result = validate_head_coach(payload)
+        assert "error" in result
+
+    def test_score_float_returns_error(self):
+        payload = self._base()
+        payload["technique_scores"]["forehand"] = 3.5
+        result = validate_head_coach(payload)
+        assert "error" in result
+
+    def test_score_string_returns_error(self):
+        """LLM may produce "3" instead of 3 — must be rejected."""
+        payload = self._base()
+        payload["technique_scores"]["forehand"] = "3"
+        result = validate_head_coach(payload)
+        assert "error" in result
+
+    def test_unknown_key_in_technique_scores_is_ignored(self):
+        """Extra keys are tolerated."""
+        payload = self._base()
+        payload["technique_scores"]["mystery_shot"] = 3
+        assert validate_head_coach(payload) == {"ok": True}
