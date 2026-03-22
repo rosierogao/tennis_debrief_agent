@@ -86,6 +86,18 @@ class HeadCoachAgent:
             "drills": [],
             "history_comparison": {"summary": "", "patterns": []},
             "confidence": 0.4,
+            "technique_scores": {
+                "first_serve_pct": None,
+                "double_faults": None,
+                "forehand": None,
+                "backhand": None,
+                "rally_depth": None,
+                "unforced_errors": None,
+                "return_of_serve": None,
+                "footwork": None,
+                "pressure_performance": None,
+                "momentum": None,
+            },
         }
 
     def _validate_output(self, obj: Dict[str, Any]) -> None:

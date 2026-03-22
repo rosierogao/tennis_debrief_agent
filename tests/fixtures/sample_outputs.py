@@ -62,6 +62,18 @@ HEAD_COACH_OUTPUT = {
         "patterns": ["double faults on break points recur across matches", "backhand errors increase in final sets"],
     },
     "confidence": 0.75,
+    "technique_scores": {
+        "first_serve_pct": None,
+        "double_faults": 2,
+        "forehand": None,
+        "backhand": 2,
+        "rally_depth": None,
+        "unforced_errors": 2,
+        "return_of_serve": None,
+        "footwork": None,
+        "pressure_performance": 2,
+        "momentum": None,
+    },
 }
 
 
