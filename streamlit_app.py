@@ -422,8 +422,38 @@ with tab_debrief:
 with tab_history:
     st.subheader("Match History")
 
-    if st.button("Load history", key="load_history"):
-        st.session_state["history_loaded"] = True
+    col_load, col_clear = st.columns([2, 1])
+    with col_load:
+        if st.button("Load history", key="load_history"):
+            st.session_state["history_loaded"] = True
+    with col_clear:
+        if st.button("🗑 Clear all history", key="clear_all_btn"):
+            st.session_state["confirm_clear_all"] = True
+
+    if st.session_state.get("confirm_clear_all"):
+        st.warning("This will permanently delete all match records and reset your saved form bullets. Are you sure?")
+        col_yes, col_no = st.columns([1, 3])
+        with col_yes:
+            if st.button("Yes, clear everything", key="confirm_clear_yes", type="primary"):
+                # Delete all matches
+                _mcp_post("/tools/match.delete_all", {})
+                # Clear all bullet fields from profile
+                _BULLET_KEYS = [f"{f}_bullets" for f in [
+                    "what_went_well", "what_went_poorly", "feelings",
+                    "opponent_characteristics", "pressure_moments", "patterns_noticed",
+                ]]
+                empty_patch = {k: [] for k in _BULLET_KEYS}
+                _mcp_post("/tools/profile.upsert", {"patch": empty_patch})
+                # Reset local session state
+                st.session_state["profile"].update(empty_patch)
+                st.session_state.pop("confirm_clear_all", None)
+                st.session_state["history_loaded"] = False
+                st.success("All match history and saved bullets cleared.")
+                st.rerun()
+        with col_no:
+            if st.button("Cancel", key="confirm_clear_no"):
+                st.session_state.pop("confirm_clear_all", None)
+                st.rerun()
 
     if st.session_state.get("history_loaded"):
         result = _mcp_post("/tools/match.retrieve_recent", {"limit": 20, "include_full": True})

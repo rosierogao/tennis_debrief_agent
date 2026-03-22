@@ -126,6 +126,20 @@ class FirestoreDB:
         data["match_id"] = doc.id
         return data
     
+    def delete_all_matches(self) -> int:
+        """
+        Delete every document in the matches collection.
+
+        Returns:
+            Number of documents deleted.
+        """
+        docs = self.matches_ref.stream()
+        count = 0
+        for doc in docs:
+            doc.reference.delete()
+            count += 1
+        return count
+
     def delete_match(self, match_id: str) -> bool:
         """
         Delete a match document by ID.

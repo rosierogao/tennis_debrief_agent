@@ -86,3 +86,9 @@ class MatchDeleteInput(BaseModel):
 class MatchDeleteOutput(BaseModel):
     """Output for match.delete tool."""
     ok: bool = Field(..., description="True if deleted, False if not found")
+
+
+class MatchDeleteAllOutput(BaseModel):
+    """Output for match.delete_all tool."""
+    ok: bool = Field(True, description="Operation success status")
+    deleted: int = Field(..., description="Number of matches deleted")

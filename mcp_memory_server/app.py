@@ -102,6 +102,15 @@ def match_retrieve_recent(payload: Dict[str, Any]) -> Dict[str, Any]:
         return _internal_error(str(exc))
 
 
+@app.post("/tools/match.delete_all")
+def match_delete_all(payload: Dict[str, Any]) -> Dict[str, Any]:
+    try:
+        deleted = db.delete_all_matches()
+        return models.MatchDeleteAllOutput(ok=True, deleted=deleted).model_dump()
+    except Exception as exc:  # pragma: no cover - safety net
+        return _internal_error(str(exc))
+
+
 @app.post("/tools/match.delete")
 def match_delete(payload: Dict[str, Any]) -> Dict[str, Any]:
     try:
