@@ -2,3 +2,4 @@
 google-adk
 requests
 streamlit
+plotly>=5.0
