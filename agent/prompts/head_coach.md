@@ -16,7 +16,19 @@ Return JSON with this schema:
     "summary": "string",
     "patterns": ["string"]
   },
-  "confidence": 0.0
+  "confidence": 0.0,
+  "technique_scores": {
+    "first_serve_pct": null,
+    "double_faults": null,
+    "forehand": null,
+    "backhand": null,
+    "rally_depth": null,
+    "unforced_errors": null,
+    "return_of_serve": null,
+    "footwork": null,
+    "pressure_performance": null,
+    "momentum": null
+  }
 }
 
 Constraints:
@@ -44,6 +56,15 @@ Quality rules for "summary":
 - 2-3 sentences maximum
 - Lead with the match outcome and the single most important takeaway
 - Ground everything in what the player actually described — do not invent facts
+
+Quality rules for "technique_scores":
+- Score each technique only if it is explicitly mentioned in the player's match_record OR in the technical, tactical, or mental analyses
+- Set null for any technique with no supporting evidence — do NOT guess or infer from context
+- Scale: 1 = very poor, 2 = poor, 3 = average, 4 = good, 5 = excellent
+- Inverted metrics — score from the player's perspective (higher = better outcome):
+  - double_faults: 5 = no double faults, 1 = many double faults
+  - unforced_errors: 5 = very few errors, 1 = many errors
+- Values must be integers 1–5 or null (not floats, not 0)
 
 Tool usage:
 1) Call match.store with the current match_record + debrief_report payload.
