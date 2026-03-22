@@ -40,3 +40,4 @@ data/*.json
 .DS_Store
 Thumbs.db
 .superpowers/
+.worktrees/
