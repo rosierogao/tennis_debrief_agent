@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import re
+import plotly.graph_objects as go
 from typing import Any, Dict, List, Optional, Tuple
 
 import requests
@@ -29,6 +30,23 @@ _BULLET_FIELDS = [
     "pressure_moments",
     "patterns_noticed",
 ]
+
+_TECHNIQUE_LABELS = {
+    "first_serve_pct": "1st Serve %",
+    "double_faults": "Double Faults",
+    "forehand": "Forehand",
+    "backhand": "Backhand",
+    "rally_depth": "Rally Depth",
+    "unforced_errors": "Unforced Errors",
+    "return_of_serve": "Return",
+    "footwork": "Footwork",
+    "pressure_performance": "Pressure",
+    "momentum": "Momentum",
+}
+
+_TECHNIQUE_ORDER = list(_TECHNIQUE_LABELS.keys())
+
+_TECHNIQUE_COLOR = "#4f8ef7"
 
 
 def _parse_list(text: str) -> List[str]:
@@ -209,6 +227,83 @@ async def _run_agent_once(message: str) -> Tuple[List[Tuple[str, str]], Dict[str
     return events, final_report
 
 
+def _render_radar(technique_scores: Dict[str, Any]) -> None:
+    """Render a Plotly radar chart for the given technique scores dict.
+
+    Null-scored techniques show a grey dashed polygon outline at r=5.
+    Scored techniques form a solid blue filled polygon.
+    """
+    scores = {k: technique_scores.get(k) for k in _TECHNIQUE_ORDER}
+    scored_keys = [k for k in _TECHNIQUE_ORDER if scores[k] is not None]
+    null_keys = [k for k in _TECHNIQUE_ORDER if scores[k] is None]
+
+    if not scored_keys:
+        st.caption(
+            "No technique data — mention specific techniques in your notes to see scoring."
+        )
+        return
+
+    all_labels = [_TECHNIQUE_LABELS[k] for k in _TECHNIQUE_ORDER]
+    scored_labels = [_TECHNIQUE_LABELS[k] for k in scored_keys]
+    scored_values = [scores[k] for k in scored_keys]
+    # Close the polygon
+    scored_labels_closed = scored_labels + [scored_labels[0]]
+    scored_values_closed = scored_values + [scored_values[0]]
+
+    fig = go.Figure()
+
+    # Ghost trace — establishes all 10 axis labels at radius 0 (invisible)
+    fig.add_trace(go.Scatterpolar(
+        r=[0] * (len(all_labels) + 1),
+        theta=all_labels + [all_labels[0]],
+        mode="lines",
+        line=dict(color="rgba(0,0,0,0)", width=0),
+        showlegend=False,
+        hoverinfo="skip",
+    ))
+
+    # Null-techniques trace — grey dashed polygon at r=5 (approximates "grey axes")
+    if null_keys:
+        null_labels = [_TECHNIQUE_LABELS[k] for k in null_keys]
+        fig.add_trace(go.Scatterpolar(
+            r=[5] * (len(null_labels) + 1),
+            theta=null_labels + [null_labels[0]],
+            mode="lines",
+            line=dict(color="#555555", width=1, dash="dot"),
+            opacity=0.4,
+            showlegend=False,
+            hoverinfo="skip",
+        ))
+
+    # Scored polygon — only non-null techniques
+    fig.add_trace(go.Scatterpolar(
+        r=scored_values_closed,
+        theta=scored_labels_closed,
+        fill="toself",
+        fillcolor="rgba(79,142,247,0.15)",
+        line=dict(color=_TECHNIQUE_COLOR, width=2),
+        showlegend=False,
+        hovertemplate="%{theta}: %{r}/5<extra></extra>",
+    ))
+
+    fig.update_layout(
+        polar=dict(
+            radialaxis=dict(visible=True, range=[0, 5], tickvals=[1, 2, 3, 4, 5]),
+            angularaxis=dict(tickfont=dict(size=10)),
+        ),
+        showlegend=False,
+        margin=dict(l=40, r=40, t=30, b=30),
+        height=300,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#cccccc"),
+    )
+
+    st.plotly_chart(fig, use_container_width=True)
+    if null_keys:
+        st.caption("grey axes = not mentioned this match")
+
+
 def _render_debrief(report: Dict[str, Any]) -> None:
     if not report:
         st.warning("No debrief report found.")
@@ -227,6 +322,11 @@ def _render_debrief(report: Dict[str, Any]) -> None:
 
     st.markdown("#### Summary")
     st.write(summary or "No summary provided.")
+
+    technique_scores = report.get("technique_scores")
+    if technique_scores:
+        st.markdown("#### Technique Snapshot")
+        _render_radar(technique_scores)
 
     st.markdown("#### Focus Areas")
     if focus_areas:
@@ -279,6 +379,7 @@ def _render_debrief(report: Dict[str, Any]) -> None:
             "drills",
             "history_comparison",
             "confidence",
+            "technique_scores",
         }
     }
     if other_keys:
