@@ -113,8 +113,9 @@ Newly entered items (raw — may have typos, rough phrasing, or overlap with exi
 
 Instructions:
 1. Polish each new item: fix typos, improve phrasing into a clear concise tennis-specific bullet (e.g. "bkhand depth low" → "Backhand depth consistently short")
-2. Check each polished new item against the existing bullets — if semantically the same or very similar, keep only the better-phrased version and discard the duplicate
-3. Return the full merged list (existing bullets + non-duplicate new items), all polished
+2. Remove match-specific numbers, percentages, or counts so bullets are reusable across future matches (e.g. "First serve was 70% in" → "First serve percentage was high", "Made 6 double faults" → "Double faults under pressure")
+3. Check each polished new item against the existing bullets — if semantically the same or very similar, keep only the better-phrased version and discard the duplicate
+4. Return the full merged list (existing bullets + non-duplicate new items), all polished
 
 Return valid JSON only, no markdown:
 {{"bullets": ["...", "..."]}}"""
@@ -177,14 +178,14 @@ def _bullet_input(label: str, field: str, placeholder: str, profile: Dict[str, A
         new_raw = st.text_area(
             "➕ Add new",
             placeholder=placeholder,
-            height=60,
+            height=50,
             key=f"new_{field}",
         )
     else:
         new_raw = st.text_area(
             label,
             placeholder=placeholder,
-            height=90,
+            height=68,
             key=f"new_{field}",
         )
 
@@ -304,16 +305,54 @@ def _render_radar(technique_scores: Dict[str, Any]) -> None:
         st.caption("grey axes = not mentioned this match")
 
 
+def _ntrp_multiplier(opponent_level: str, factor: float = 0.15) -> float:
+    """Return a score multiplier based on opponent NTRP rating.
+
+    Baseline is 4.0 (multiplier = 1.0). Each 1.0 NTRP step adds/subtracts `factor`.
+    Unknown opponent level returns 1.0 (no adjustment).
+    """
+    try:
+        ntrp = float(opponent_level)
+    except (TypeError, ValueError):
+        return 1.0
+    return 1.0 + (ntrp - 4.0) * factor
+
+
+def _parse_win_loss(scoreline: str) -> Optional[bool]:
+    """Return True=win, False=loss, None=unknown from a scoreline string."""
+    if not scoreline:
+        return None
+    s = scoreline.lower().strip()
+    if s.startswith("won") or s.startswith("w "):
+        return True
+    if s.startswith("lost") or s.startswith("l "):
+        return False
+    sets = re.findall(r'(\d+)[-–](\d+)', scoreline)
+    if not sets:
+        return None
+    player_sets = sum(1 for p, o in sets if int(p) > int(o))
+    opp_sets = sum(1 for p, o in sets if int(o) > int(p))
+    if player_sets > opp_sets:
+        return True
+    if opp_sets > player_sets:
+        return False
+    return None
+
+
 def _render_trend_charts(matches: List[Dict[str, Any]]) -> None:
     """Render 10 technique trend charts from match history."""
     series: Dict[str, List] = {k: [] for k in _TECHNIQUE_ORDER}
     dates: List[str] = []
+    win_loss: List[Optional[bool]] = []
+    opponent_levels: List[str] = []
 
     for m in matches:
         record = m.get("match_record") or {}
         report = m.get("debrief_report") or {}
         date = record.get("match_date") or m.get("created_at", "")[:10]
         dates.append(date)
+        win_loss.append(_parse_win_loss(record.get("scoreline") or ""))
+        opponent_levels.append(record.get("opponent_level") or "")
         scores = report.get("technique_scores") or {}
         for key in _TECHNIQUE_ORDER:
             series[key].append(scores.get(key))  # None if not mentioned
@@ -321,6 +360,22 @@ def _render_trend_charts(matches: List[Dict[str, Any]]) -> None:
     if not dates:
         st.info("No match history yet. Complete your first debrief to start tracking progress.")
         return
+
+    normalize = st.toggle("Adjust for opponent level", key="normalize_progress")
+    adj_factor = 0.15
+    if normalize:
+        adj_factor = st.slider(
+            "Adjustment strength (% per NTRP step from 4.0)",
+            min_value=5, max_value=30, value=15, step=5,
+            format="%d%%", key="adj_factor_progress",
+        ) / 100.0
+        st.caption(
+            f"e.g. vs 5.0 NTRP → ×{1.0 + (5.0 - 4.0) * adj_factor:.2f} | "
+            f"vs 3.0 NTRP → ×{1.0 + (3.0 - 4.0) * adj_factor:.2f}"
+        )
+
+    # Global date range so all charts share the same x-axis
+    x_min, x_max = dates[0], dates[-1]
 
     cols = st.columns(2)
     for idx, key in enumerate(_TECHNIQUE_ORDER):
@@ -331,10 +386,15 @@ def _render_trend_charts(matches: List[Dict[str, Any]]) -> None:
         with col:
             st.markdown(f"**{label}**")
 
-            scored_dates = [d for d, v in zip(dates, vals) if v is not None]
-            scored_vals = [v for v in vals if v is not None]
+            if normalize:
+                vals = [
+                    round(min(5.0, v * _ntrp_multiplier(opponent_levels[i], adj_factor)), 1)
+                    if v is not None else None
+                    for i, v in enumerate(vals)
+                ]
+            adj_label = " (adj)" if normalize else ""
 
-            if not scored_dates:
+            if not any(v is not None for v in vals):
                 st.caption("No data yet")
                 continue
 
@@ -351,62 +411,95 @@ def _render_trend_charts(matches: List[Dict[str, Any]]) -> None:
                     interp_null_dates.append(d)
                     interp_null_vals.append(interp_y)
 
+            # Rolling baseline: mean of last 5 scored values at each scored point
+            scored_indices = [(i, d, v) for i, (d, v) in enumerate(zip(dates, vals)) if v is not None]
+            baseline_dates: List[str] = []
+            baseline_vals: List[float] = []
+            for rank, (i, d, v) in enumerate(scored_indices):
+                window = [sv for _, _, sv in scored_indices[max(0, rank - 4): rank + 1]]
+                baseline_dates.append(d)
+                baseline_vals.append(round(sum(window) / len(window), 2))
+
+            # Build full-length arrays per outcome (None for other-outcome positions)
+            # so connectgaps=False only links consecutive same-outcome points.
+            s_dates = [d for _, d, _ in scored_indices]
+            win_y, loss_y, unk_y = [], [], []
+            win_text, loss_text, unk_text = [], [], []
+            for orig_idx, d, v in scored_indices:
+                wl = win_loss[orig_idx]
+                label = f"{'W' if wl is True else ('L' if wl is False else '?')} {d}: {v}/5{adj_label}"
+                win_y.append(v if wl is True else None)
+                loss_y.append(v if wl is False else None)
+                unk_y.append(v if wl is None else None)
+                win_text.append(label if wl is True else "")
+                loss_text.append(label if wl is False else "")
+                unk_text.append(label if wl is None else "")
+
             fig = go.Figure()
 
-            # Dashed gap-connector trace (connects across nulls, low opacity)
-            fig.add_trace(go.Scatter(
-                x=dates,
-                y=vals,
-                mode="lines",
-                line=dict(color=_TECHNIQUE_COLOR, width=1, dash="dot"),
-                opacity=0.3,
-                connectgaps=True,
-                showlegend=False,
-                hoverinfo="skip",
-            ))
-
-            # Hollow circle markers at null positions (interpolated y)
-            if interp_null_dates:
+            # Rolling baseline trace (dashed grey)
+            if len(baseline_dates) >= 2:
                 fig.add_trace(go.Scatter(
-                    x=interp_null_dates,
-                    y=interp_null_vals,
-                    mode="markers",
-                    marker=dict(
-                        symbol="circle-open",
-                        size=7,
-                        color=_TECHNIQUE_COLOR,
-                        opacity=0.4,
-                        line=dict(width=1.5),
-                    ),
+                    x=baseline_dates,
+                    y=baseline_vals,
+                    mode="lines",
+                    line=dict(color="#888888", width=1.5, dash="dash"),
+                    opacity=0.6,
+                    connectgaps=False,
                     showlegend=False,
-                    hoverinfo="skip",
+                    hovertemplate="Baseline (last 5): %{y:.1f}<extra></extra>",
                 ))
 
-            # Solid scored-points trace
-            fig.add_trace(go.Scatter(
-                x=scored_dates,
-                y=scored_vals,
-                mode="lines+markers",
-                line=dict(color=_TECHNIQUE_COLOR, width=2),
-                marker=dict(size=7, color=_TECHNIQUE_COLOR),
-                connectgaps=False,
-                showlegend=False,
-                hovertemplate="%{x}: %{y}/5<extra></extra>",
-            ))
+            # Win trend line (green) — connects all wins across gaps
+            if any(v is not None for v in win_y):
+                fig.add_trace(go.Scatter(
+                    x=s_dates, y=win_y,
+                    mode="lines+markers",
+                    line=dict(color="#4CAF50", width=2),
+                    marker=dict(size=8, color="#4CAF50", line=dict(width=1, color="#ffffff")),
+                    connectgaps=True, showlegend=False,
+                    text=win_text,
+                    hovertemplate="%{text}<extra></extra>",
+                ))
+
+            # Loss trend line (red) — connects all losses across gaps
+            if any(v is not None for v in loss_y):
+                fig.add_trace(go.Scatter(
+                    x=s_dates, y=loss_y,
+                    mode="lines+markers",
+                    line=dict(color="#f44336", width=2),
+                    marker=dict(size=8, color="#f44336", line=dict(width=1, color="#ffffff")),
+                    connectgaps=True, showlegend=False,
+                    text=loss_text,
+                    hovertemplate="%{text}<extra></extra>",
+                ))
+
+            # Unknown outcome (blue) — connects all unknowns across gaps
+            if any(v is not None for v in unk_y):
+                fig.add_trace(go.Scatter(
+                    x=s_dates, y=unk_y,
+                    mode="lines+markers",
+                    line=dict(color=_TECHNIQUE_COLOR, width=2),
+                    marker=dict(size=8, color=_TECHNIQUE_COLOR, line=dict(width=1, color="#ffffff")),
+                    connectgaps=True, showlegend=False,
+                    text=unk_text,
+                    hovertemplate="%{text}<extra></extra>",
+                ))
 
             # Trend direction: slope across last 3 scored points (fallback: last 2)
-            if len(scored_vals) >= 3:
-                delta = scored_vals[-1] - scored_vals[-3]
-            elif len(scored_vals) >= 2:
-                delta = scored_vals[-1] - scored_vals[-2]
+            all_scored_vals = [v for _, _, v in scored_indices]
+            if len(all_scored_vals) >= 3:
+                delta = all_scored_vals[-1] - all_scored_vals[-3]
+            elif len(all_scored_vals) >= 2:
+                delta = all_scored_vals[-1] - all_scored_vals[-2]
             else:
                 delta = 0
             trend = "↑" if delta > 0 else ("↓" if delta < 0 else "→")
             trend_color = "#4CAF50" if delta > 0 else ("#f44336" if delta < 0 else "#aaaaaa")
 
             fig.update_layout(
-                yaxis=dict(range=[0, 5], tickvals=[1, 2, 3, 4, 5], tickfont=dict(size=9)),
-                xaxis=dict(tickfont=dict(size=9)),
+                yaxis=dict(range=[0.5, 5.4], tickvals=[1, 2, 3, 4, 5], tickfont=dict(size=9)),
+                xaxis=dict(range=[x_min, x_max], tickfont=dict(size=9)),
                 margin=dict(l=30, r=10, t=10, b=30),
                 height=160,
                 paper_bgcolor="rgba(0,0,0,0)",
@@ -414,10 +507,10 @@ def _render_trend_charts(matches: List[Dict[str, Any]]) -> None:
                 font=dict(color="#cccccc"),
             )
 
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig, use_container_width=True, key=f"trend_{key}")
             st.markdown(
                 f"<div style='text-align:right;font-size:0.75rem;color:{trend_color}'>"
-                f"{trend} last match: {scored_vals[-1]}/5</div>",
+                f"{trend} last match: {all_scored_vals[-1]}/5</div>",
                 unsafe_allow_html=True,
             )
 
@@ -507,7 +600,7 @@ def _render_debrief(report: Dict[str, Any]) -> None:
 
 # ── Page setup ────────────────────────────────────────────────────────────────
 
-st.set_page_config(page_title="Court Debrief", page_icon="🎾", layout="wide")
+st.set_page_config(page_title="Court Debrief", page_icon="🎾", layout="wide", initial_sidebar_state="collapsed")
 st.title("🎾 Court Debrief")
 
 with st.sidebar:
@@ -538,8 +631,8 @@ with tab_debrief:
         st.subheader("Match Intake")
         match_date = st.date_input("Match date")
         opponent_level = st.selectbox(
-            "Opponent level",
-            ["Beginner", "Intermediate", "Advanced", "Competitive", "Unknown"],
+            "Opponent NTRP rating",
+            ["Unknown", "2.5", "3.0", "3.5", "4.0", "4.5", "5.0", "5.5", "6.0", "6.5", "7.0"],
         )
         scoreline = st.text_input("Scoreline", placeholder="6-4 3-6 6-2")
 
@@ -603,11 +696,10 @@ with tab_debrief:
             payload = json.dumps(match_record, ensure_ascii=True)
             with st.spinner("Running agents..."):
                 events, final_report = _run_async(_run_agent_once(payload))
+                st.session_state["last_debrief"] = final_report
+                st.session_state["last_events"] = events
 
             if final_report:
-                _render_debrief(final_report)
-                st.success("Debrief complete.")
-
                 _field_labels = {
                     "what_went_well": "What went well",
                     "what_went_poorly": "What went poorly",
@@ -629,12 +721,16 @@ with tab_debrief:
             else:
                 st.warning("No final report detected. Check the event log.")
 
+        if st.session_state.get("last_debrief"):
+            _render_debrief(st.session_state["last_debrief"])
+            st.success("Debrief complete.")
+
             with st.expander("Event log"):
-                for author, text in events:
+                for author, text in st.session_state.get("last_events", []):
                     st.write(f"**{author}**: {text}")
 
             with st.expander("Raw JSON"):
-                st.json(final_report)
+                st.json(st.session_state["last_debrief"])
 
 # ── Tab 2: Match History ──────────────────────────────────────────────────────
 
@@ -747,6 +843,7 @@ with tab_history:
 with tab_progress:
     st.subheader("Technique Progress")
     st.caption("Scores are AI-inferred from your match notes. Only techniques you mention are scored.")
+    st.caption("🟢 Win · 🔴 Loss · 🔵 Unknown  ·  Opponent level adjustment: baseline 4.0 NTRP, ±15% per 1.0 rating step, capped at 5.")
 
     if st.button("Load progress", key="load_progress"):
         st.session_state["progress_loaded"] = True
