@@ -369,17 +369,21 @@ def _render_compare_radar(overlays: List[Dict[str, Any]]) -> None:
     st.plotly_chart(fig, use_container_width=True, key="compare_radar")
 
 
-def _ntrp_multiplier(opponent_level: str, factor: float = 0.15) -> float:
-    """Return a score multiplier based on opponent NTRP rating.
+def _ntrp_multiplier(opponent_level: str, factor: float = 0.15, player_ntrp: str = "Unknown") -> float:
+    """Return a score multiplier based on opponent NTRP relative to player's own level.
 
-    Baseline is 4.0 (multiplier = 1.0). Each 1.0 NTRP step adds/subtracts `factor`.
-    Unknown opponent level returns 1.0 (no adjustment).
+    Neutral = player's own NTRP (or 4.0 if unknown). Each 1.0 NTRP step adds/subtracts `factor`.
+    Returns 1.0 (no adjustment) if either level is unknown.
     """
     try:
-        ntrp = float(opponent_level)
+        opp = float(opponent_level)
     except (TypeError, ValueError):
         return 1.0
-    return 1.0 + (ntrp - 4.0) * factor
+    try:
+        own = float(player_ntrp)
+    except (TypeError, ValueError):
+        own = 4.0
+    return 1.0 + (opp - own) * factor
 
 
 def _parse_win_loss(scoreline: str) -> Optional[bool]:
@@ -403,7 +407,7 @@ def _parse_win_loss(scoreline: str) -> Optional[bool]:
     return None
 
 
-def _render_trend_charts(matches: List[Dict[str, Any]]) -> None:
+def _render_trend_charts(matches: List[Dict[str, Any]], player_ntrp: str = "Unknown") -> None:
     """Render 10 technique trend charts from match history."""
     series: Dict[str, List] = {k: [] for k in _TECHNIQUE_ORDER}
     dates: List[str] = []
@@ -429,14 +433,18 @@ def _render_trend_charts(matches: List[Dict[str, Any]]) -> None:
     adj_factor = 0.15
     if normalize:
         adj_factor = st.slider(
-            "Adjustment strength (% per NTRP step from 4.0)",
+            "Adjustment strength (% per NTRP step from your level)",
             min_value=5, max_value=30, value=15, step=5,
             format="%d%%", key="adj_factor_progress",
         ) / 100.0
-        st.caption(
-            f"e.g. vs 5.0 NTRP → ×{1.0 + (5.0 - 4.0) * adj_factor:.2f} | "
-            f"vs 3.0 NTRP → ×{1.0 + (3.0 - 4.0) * adj_factor:.2f}"
-        )
+        try:
+            _own = float(player_ntrp)
+            st.caption(
+                f"e.g. vs {_own + 1.0:.1f} NTRP → ×{1.0 + adj_factor:.2f} | "
+                f"vs {_own - 1.0:.1f} NTRP → ×{1.0 - adj_factor:.2f}"
+            )
+        except (TypeError, ValueError):
+            st.caption(f"Set your NTRP rating to see examples.")
 
     # Global date range so all charts share the same x-axis
     x_min, x_max = dates[0], dates[-1]
@@ -452,7 +460,7 @@ def _render_trend_charts(matches: List[Dict[str, Any]]) -> None:
 
             if normalize:
                 vals = [
-                    round(min(5.0, v * _ntrp_multiplier(opponent_levels[i], adj_factor)), 1)
+                    round(min(5.0, v * _ntrp_multiplier(opponent_levels[i], adj_factor, player_ntrp)), 1)
                     if v is not None else None
                     for i, v in enumerate(vals)
                 ]
@@ -605,11 +613,11 @@ def _render_debrief(report: Dict[str, Any], opponent_level: str = "Unknown") -> 
         adj_factor_d = 0.15
         if normalize_d:
             adj_factor_d = st.slider(
-                "Adjustment strength (% per NTRP step from 4.0)",
+                "Adjustment strength (% per NTRP step from your level)",
                 min_value=5, max_value=30, value=15, step=5,
                 format="%d%%", key="adj_factor_debrief",
             ) / 100.0
-            mult = _ntrp_multiplier(opponent_level, adj_factor_d)
+            mult = _ntrp_multiplier(opponent_level, adj_factor_d, player_ntrp=st.session_state.get("profile", {}).get("player_ntrp", "Unknown"))
             st.caption(f"vs {opponent_level} NTRP → ×{mult:.2f}")
             technique_scores = {
                 k: round(min(5.0, v * mult), 1) if v is not None else None
@@ -695,6 +703,22 @@ if "profile" not in st.session_state:
     st.session_state["profile"] = _load_profile()
 
 profile = st.session_state["profile"]
+
+# ── Your NTRP (persisted to profile) ──────────────────────────────────────────
+
+_NTRP_OPTIONS = ["Unknown", "2.5", "3.0", "3.5", "4.0", "4.5", "5.0", "5.5", "6.0", "6.5", "7.0"]
+_saved_ntrp = profile.get("player_ntrp") or "Unknown"
+_player_ntrp_input = st.selectbox(
+    "Your NTRP rating",
+    _NTRP_OPTIONS,
+    index=_NTRP_OPTIONS.index(_saved_ntrp) if _saved_ntrp in _NTRP_OPTIONS else 0,
+    key="player_ntrp_select",
+)
+if _player_ntrp_input != _saved_ntrp:
+    _mcp_post("/tools/profile.upsert", {"patch": {"player_ntrp": _player_ntrp_input}})
+    st.session_state["profile"]["player_ntrp"] = _player_ntrp_input
+
+_player_ntrp: str = _player_ntrp_input
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 
@@ -944,7 +968,7 @@ with tab_progress:
                 matches,
                 key=lambda m: (m.get("match_record") or {}).get("match_date") or m.get("created_at", ""),
             )
-            _render_trend_charts(matches)
+            _render_trend_charts(matches, player_ntrp=_player_ntrp)
 
 # ── Tab 4: Compare ────────────────────────────────────────────────────────────
 
@@ -987,14 +1011,18 @@ with tab_compare:
                 adj_factor_c = 0.15
                 if normalize_c:
                     adj_factor_c = st.slider(
-                        "Adjustment strength (% per NTRP step from 4.0)",
+                        "Adjustment strength (% per NTRP step from your level)",
                         min_value=5, max_value=30, value=15, step=5,
                         format="%d%%", key="adj_factor_compare",
                     ) / 100.0
-                    st.caption(
-                        f"e.g. vs 5.0 NTRP → ×{1.0 + (5.0 - 4.0) * adj_factor_c:.2f} | "
-                        f"vs 3.0 NTRP → ×{1.0 + (3.0 - 4.0) * adj_factor_c:.2f}"
-                    )
+                    try:
+                        _own_c = float(_player_ntrp)
+                        st.caption(
+                            f"e.g. vs {_own_c + 1.0:.1f} NTRP → ×{1.0 + adj_factor_c:.2f} | "
+                            f"vs {_own_c - 1.0:.1f} NTRP → ×{1.0 - adj_factor_c:.2f}"
+                        )
+                    except (TypeError, ValueError):
+                        st.caption("Set your NTRP rating to see examples.")
 
                 label_to_match = {_match_label(m): m for m in c_matches}
                 overlays = []
@@ -1008,7 +1036,7 @@ with tab_compare:
                     opp_lvl = record.get("opponent_level") or "Unknown"
                     if normalize_c:
                         scores = {
-                            k: round(min(5.0, v * _ntrp_multiplier(opp_lvl, adj_factor_c)), 1)
+                            k: round(min(5.0, v * _ntrp_multiplier(opp_lvl, adj_factor_c, _player_ntrp)), 1)
                             if v is not None else None
                             for k, v in raw_scores.items()
                         }
