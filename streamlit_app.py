@@ -704,21 +704,28 @@ if "profile" not in st.session_state:
 
 profile = st.session_state["profile"]
 
-# ── Your NTRP (persisted to profile) ──────────────────────────────────────────
+# ── Your NTRP (shown once until saved) ────────────────────────────────────────
 
 _NTRP_OPTIONS = ["Unknown", "2.5", "3.0", "3.5", "4.0", "4.5", "5.0", "5.5", "6.0", "6.5", "7.0"]
-_saved_ntrp = profile.get("player_ntrp") or "Unknown"
-_player_ntrp_input = st.selectbox(
-    "Your NTRP rating",
-    _NTRP_OPTIONS,
-    index=_NTRP_OPTIONS.index(_saved_ntrp) if _saved_ntrp in _NTRP_OPTIONS else 0,
-    key="player_ntrp_select",
-)
-if _player_ntrp_input != _saved_ntrp:
-    _mcp_post("/tools/profile.upsert", {"patch": {"player_ntrp": _player_ntrp_input}})
-    st.session_state["profile"]["player_ntrp"] = _player_ntrp_input
+_player_ntrp: str = profile.get("player_ntrp") or "Unknown"
 
-_player_ntrp: str = _player_ntrp_input
+if _player_ntrp == "Unknown":
+    st.info("👋 One-time setup: what's your NTRP rating? This is used to adjust technique scores by opponent level.")
+    _col1, _col2 = st.columns([2, 1])
+    with _col1:
+        _ntrp_input = st.selectbox(
+            "Your NTRP rating",
+            [o for o in _NTRP_OPTIONS if o != "Unknown"],
+            key="player_ntrp_select",
+        )
+    with _col2:
+        st.write("")
+        st.write("")
+        if st.button("Save", key="save_player_ntrp"):
+            _mcp_post("/tools/profile.upsert", {"patch": {"player_ntrp": _ntrp_input}})
+            st.session_state["profile"]["player_ntrp"] = _ntrp_input
+            _player_ntrp = _ntrp_input
+            st.rerun()
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 
