@@ -8,6 +8,41 @@ A multi-agent AI system that helps tennis players track match records, identify 
 
 ---
 
+## Features
+
+### New Debrief tab
+- Fill in match date, opponent NTRP rating, scoreline, and six structured fields (what went well, what went poorly, feelings, opponent characteristics, pressure moments, patterns noticed)
+- Each field shows previously saved bullets as collapsible pill pickers — select reusable observations from past matches, then add new free-text items
+- New items are AI-polished (typos fixed, match-specific numbers removed) and merged into your saved bullet library for future use
+- Submits to the 6-agent pipeline and renders the full debrief on the right panel
+- Debrief output includes: summary, technique snapshot radar, focus areas, improvement levers, drills, and history comparison
+
+### Technique Snapshot (radar chart)
+- AI-inferred scores (1–5) for 10 techniques: 1st Serve %, Double Faults, Forehand, Backhand, Rally Depth, Unforced Errors, Return of Serve, Footwork, Pressure Performance, Momentum
+- Only techniques explicitly mentioned in your match notes are scored; unmentioned axes are shown in grey
+- Optional opponent-level adjustment: toggle on to scale scores relative to your NTRP baseline, with a 5–30% per NTRP step aggressiveness slider
+
+### Compare tab
+- Load past matches and select up to 6 to overlay on a single radar chart
+- Each match gets a distinct color (blue, orange, green, red, purple, brown) with a legend
+- Optional opponent-level adjustment applies the same NTRP normalization across all overlays
+
+### Progress tab
+- 10 technique trend line charts across all past matches, aligned to the same date axis
+- **Win/loss coloring:** green line connects wins, red connects losses, blue connects unknown outcomes
+- **Rolling baseline:** dashed grey line shows the rolling mean of your last 5 scored matches per technique
+- Optional opponent-level adjustment with aggressiveness slider; examples update dynamically based on your saved NTRP
+
+### Match History tab
+- View all past matches with full debrief details in expandable cards
+- Delete individual matches from history
+
+### Player profile
+- One-time NTRP rating setup (shown only until saved) — used as the neutral baseline for all opponent-level adjustments
+- Bullet libraries grow automatically with each debrief; accessible across all future sessions
+
+---
+
 ## How it works
 
 Six specialized agents run in sequence on each match submission:
