@@ -168,7 +168,7 @@ def _bullet_input(label: str, field: str, placeholder: str, profile: Dict[str, A
     new_raw = ""
 
     if saved:
-        with st.expander(f"{label} ({len(saved)} saved)"):
+        with st.expander(label):
             selected = st.pills(
                 label,
                 options=saved,
