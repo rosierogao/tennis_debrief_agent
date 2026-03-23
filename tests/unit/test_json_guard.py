@@ -193,3 +193,10 @@ class TestValidateHeadCoachTechniqueScores:
         payload = self._base()
         payload["technique_scores"]["mystery_shot"] = 3
         assert validate_head_coach(payload) == {"ok": True}
+
+    def test_score_boolean_returns_error(self):
+        """JSON true/false must not be accepted as integer scores."""
+        payload = self._base()
+        payload["technique_scores"]["forehand"] = True
+        result = validate_head_coach(payload)
+        assert "error" in result

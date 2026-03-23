@@ -142,7 +142,7 @@ def validate_head_coach(payload: Dict[str, Any]) -> Dict[str, Any]:
                     continue  # extra keys tolerated
                 if val is None:
                     continue
-                if not isinstance(val, int) or val < 1 or val > 5:
+                if not isinstance(val, int) or isinstance(val, bool) or val < 1 or val > 5:
                     raise ValueError(
                         f"technique_scores.{key} must be an integer 1-5 or null, got {val!r}"
                     )
