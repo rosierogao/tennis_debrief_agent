@@ -697,8 +697,8 @@ profile = st.session_state["profile"]
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 
-tab_debrief, tab_history, tab_progress, tab_compare = st.tabs(
-    ["New Debrief", "Match History", "Progress", "Compare"]
+tab_debrief, tab_compare, tab_history, tab_progress = st.tabs(
+    ["New Debrief", "Compare", "Match History", "Progress"]
 )
 
 # ── Tab 1: New Debrief ────────────────────────────────────────────────────────
