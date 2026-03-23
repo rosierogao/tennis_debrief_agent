@@ -165,22 +165,23 @@ def _bullet_input(label: str, field: str, placeholder: str, profile: Dict[str, A
     saved: List[str] = profile.get(key) or []
 
     selected: List[str] = []
+    new_raw = ""
 
     if saved:
-        st.caption(label)
-        selected = st.pills(
-            label,
-            options=saved,
-            selection_mode="multi",
-            key=f"select_{field}",
-            label_visibility="collapsed",
-        )
-        new_raw = st.text_area(
-            "➕ Add new",
-            placeholder=placeholder,
-            height=50,
-            key=f"new_{field}",
-        )
+        with st.expander(f"{label} ({len(saved)} saved)"):
+            selected = st.pills(
+                label,
+                options=saved,
+                selection_mode="multi",
+                key=f"select_{field}",
+                label_visibility="collapsed",
+            )
+            new_raw = st.text_area(
+                "➕ Add new",
+                placeholder=placeholder,
+                height=50,
+                key=f"new_{field}",
+            )
     else:
         new_raw = st.text_area(
             label,
