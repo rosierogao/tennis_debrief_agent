@@ -1,4 +1,4 @@
-# Court Debrief
+# Tennis Debrief Agent
 
 A multi-agent AI system that helps tennis players track match records, identify recurring patterns, and get concrete coaching feedback — backed by persistent match history.
 
