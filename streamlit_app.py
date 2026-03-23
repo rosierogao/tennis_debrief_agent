@@ -169,11 +169,13 @@ def _bullet_input(label: str, field: str, placeholder: str, profile: Dict[str, A
 
     if saved:
         with st.expander(label):
+            _pill_key = f"select_{field}"
             selected = st.pills(
                 label,
                 options=saved,
                 selection_mode="multi",
-                key=f"select_{field}",
+                default=st.session_state.get(_pill_key) or [],
+                key=_pill_key,
                 label_visibility="collapsed",
             )
             new_raw = st.text_area(
