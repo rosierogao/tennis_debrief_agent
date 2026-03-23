@@ -305,6 +305,69 @@ def _render_radar(technique_scores: Dict[str, Any]) -> None:
         st.caption("grey axes = not mentioned this match")
 
 
+_COMPARE_COLORS = [
+    ("#4f8ef7", "rgba(79,142,247,0.12)"),
+    ("#ff8c00", "rgba(255,140,0,0.12)"),
+    ("#2ecc71", "rgba(46,204,113,0.12)"),
+    ("#e74c3c", "rgba(231,76,60,0.12)"),
+    ("#9b59b6", "rgba(155,89,182,0.12)"),
+    ("#795548", "rgba(121,85,72,0.12)"),
+]
+
+
+def _render_compare_radar(overlays: List[Dict[str, Any]]) -> None:
+    """Render overlaid radar polygons, one per match. Max 6 overlays."""
+    if not overlays:
+        st.caption("No matches selected.")
+        return
+
+    all_labels = [_TECHNIQUE_LABELS[k] for k in _TECHNIQUE_ORDER]
+    fig = go.Figure()
+
+    # Ghost trace to establish all axis labels
+    fig.add_trace(go.Scatterpolar(
+        r=[0] * (len(all_labels) + 1),
+        theta=all_labels + [all_labels[0]],
+        mode="lines",
+        line=dict(color="rgba(0,0,0,0)", width=0),
+        showlegend=False,
+        hoverinfo="skip",
+    ))
+
+    for i, overlay in enumerate(overlays[:6]):
+        line_color, fill_color = _COMPARE_COLORS[i]
+        scores = overlay["scores"]
+        scored_keys = [k for k in _TECHNIQUE_ORDER if scores.get(k) is not None]
+        if not scored_keys:
+            continue
+        scored_labels = [_TECHNIQUE_LABELS[k] for k in scored_keys]
+        scored_vals = [scores[k] for k in scored_keys]
+        fig.add_trace(go.Scatterpolar(
+            r=scored_vals + [scored_vals[0]],
+            theta=scored_labels + [scored_labels[0]],
+            fill="toself",
+            fillcolor=fill_color,
+            line=dict(color=line_color, width=2),
+            name=overlay["label"],
+            hovertemplate="%{theta}: %{r}/5<extra>" + overlay["label"] + "</extra>",
+        ))
+
+    fig.update_layout(
+        polar=dict(
+            radialaxis=dict(visible=True, range=[0, 5], tickvals=[1, 2, 3, 4, 5]),
+            angularaxis=dict(tickfont=dict(size=10)),
+        ),
+        showlegend=True,
+        legend=dict(font=dict(size=9), bgcolor="rgba(0,0,0,0)"),
+        margin=dict(l=40, r=40, t=30, b=30),
+        height=400,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        font=dict(color="#cccccc"),
+    )
+    st.plotly_chart(fig, use_container_width=True, key="compare_radar")
+
+
 def _ntrp_multiplier(opponent_level: str, factor: float = 0.15) -> float:
     """Return a score multiplier based on opponent NTRP rating.
 
@@ -515,7 +578,7 @@ def _render_trend_charts(matches: List[Dict[str, Any]]) -> None:
             )
 
 
-def _render_debrief(report: Dict[str, Any]) -> None:
+def _render_debrief(report: Dict[str, Any], opponent_level: str = "Unknown") -> None:
     if not report:
         st.warning("No debrief report found.")
         return
@@ -537,6 +600,20 @@ def _render_debrief(report: Dict[str, Any]) -> None:
     technique_scores = report.get("technique_scores")
     if technique_scores:
         st.markdown("#### Technique Snapshot")
+        normalize_d = st.toggle("Adjust for opponent level", key="normalize_debrief")
+        adj_factor_d = 0.15
+        if normalize_d:
+            adj_factor_d = st.slider(
+                "Adjustment strength (% per NTRP step from 4.0)",
+                min_value=5, max_value=30, value=15, step=5,
+                format="%d%%", key="adj_factor_debrief",
+            ) / 100.0
+            mult = _ntrp_multiplier(opponent_level, adj_factor_d)
+            st.caption(f"vs {opponent_level} NTRP → ×{mult:.2f}")
+            technique_scores = {
+                k: round(min(5.0, v * mult), 1) if v is not None else None
+                for k, v in technique_scores.items()
+            }
         _render_radar(technique_scores)
 
     st.markdown("#### Focus Areas")
@@ -620,7 +697,9 @@ profile = st.session_state["profile"]
 
 # ── Tabs ──────────────────────────────────────────────────────────────────────
 
-tab_debrief, tab_history, tab_progress = st.tabs(["New Debrief", "Match History", "Progress"])
+tab_debrief, tab_history, tab_progress, tab_compare = st.tabs(
+    ["New Debrief", "Match History", "Progress", "Compare"]
+)
 
 # ── Tab 1: New Debrief ────────────────────────────────────────────────────────
 
@@ -698,6 +777,7 @@ with tab_debrief:
                 events, final_report = _run_async(_run_agent_once(payload))
                 st.session_state["last_debrief"] = final_report
                 st.session_state["last_events"] = events
+                st.session_state["last_opponent_level"] = str(opponent_level)
 
             if final_report:
                 _field_labels = {
@@ -722,7 +802,10 @@ with tab_debrief:
                 st.warning("No final report detected. Check the event log.")
 
         if st.session_state.get("last_debrief"):
-            _render_debrief(st.session_state["last_debrief"])
+            _render_debrief(
+                st.session_state["last_debrief"],
+                opponent_level=st.session_state.get("last_opponent_level", "Unknown"),
+            )
             st.success("Debrief complete.")
 
             with st.expander("Event log"):
@@ -861,3 +944,75 @@ with tab_progress:
                 key=lambda m: (m.get("match_record") or {}).get("match_date") or m.get("created_at", ""),
             )
             _render_trend_charts(matches)
+
+# ── Tab 4: Compare ────────────────────────────────────────────────────────────
+
+with tab_compare:
+    st.subheader("Compare Matches")
+    st.caption("Overlay up to 6 technique snapshots on a single radar.")
+
+    if st.button("Load matches", key="load_compare"):
+        st.session_state["compare_loaded"] = True
+
+    if st.session_state.get("compare_loaded"):
+        result = _mcp_post("/tools/match.retrieve_recent", {"limit": 20, "include_full": True})
+        c_matches = (result or {}).get("matches") or []
+
+        if not c_matches:
+            st.info("No past matches found.")
+        else:
+            def _match_label(m: Dict[str, Any]) -> str:
+                record = m.get("match_record") or {}
+                date   = record.get("match_date") or m.get("created_at", "")[:10]
+                score  = record.get("scoreline") or "—"
+                lvl    = record.get("opponent_level") or ""
+                label  = f"{date} · {score}"
+                if lvl:
+                    label += f" · vs {lvl} NTRP"
+                return label
+
+            options = [_match_label(m) for m in c_matches]
+            selected_labels = st.multiselect(
+                "Select matches to compare (max 6)",
+                options=options,
+                key="compare_selected",
+            )
+            if len(selected_labels) > 6:
+                st.warning("Max 6 matches. Only the first 6 will be shown.")
+                selected_labels = selected_labels[:6]
+
+            if selected_labels:
+                normalize_c = st.toggle("Adjust for opponent level", key="normalize_compare")
+                adj_factor_c = 0.15
+                if normalize_c:
+                    adj_factor_c = st.slider(
+                        "Adjustment strength (% per NTRP step from 4.0)",
+                        min_value=5, max_value=30, value=15, step=5,
+                        format="%d%%", key="adj_factor_compare",
+                    ) / 100.0
+                    st.caption(
+                        f"e.g. vs 5.0 NTRP → ×{1.0 + (5.0 - 4.0) * adj_factor_c:.2f} | "
+                        f"vs 3.0 NTRP → ×{1.0 + (3.0 - 4.0) * adj_factor_c:.2f}"
+                    )
+
+                label_to_match = {_match_label(m): m for m in c_matches}
+                overlays = []
+                for lbl in selected_labels:
+                    m = label_to_match.get(lbl)
+                    if not m:
+                        continue
+                    record = m.get("match_record") or {}
+                    report = m.get("debrief_report") or {}
+                    raw_scores = report.get("technique_scores") or {}
+                    opp_lvl = record.get("opponent_level") or "Unknown"
+                    if normalize_c:
+                        scores = {
+                            k: round(min(5.0, v * _ntrp_multiplier(opp_lvl, adj_factor_c)), 1)
+                            if v is not None else None
+                            for k, v in raw_scores.items()
+                        }
+                    else:
+                        scores = raw_scores
+                    overlays.append({"label": lbl, "scores": scores})
+
+                _render_compare_radar(overlays)
